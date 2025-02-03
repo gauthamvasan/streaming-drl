@@ -7,7 +7,12 @@ import torch.nn.functional as F
 from torch import nn
 from torch.nn import Parameter
 from torch.distributions import Normal
-from rl_suite.mlp_policies import orthogonal_weight_init
+from sparse_init import sparse_init
+
+def initialize_weights(m):
+    if isinstance(m, nn.Linear):
+        sparse_init(m.weight, sparsity=0.9)
+        m.bias.data.fill_(0.0)
 
 
 def random_augment(images, rad_height, rad_width):
@@ -123,7 +128,7 @@ class SSEncoderModel(nn.Module):
         else:
             self.fc = nn.Linear(conv_params[-1][1] * width * height, latent_dim)
         # self.ln = nn.LayerNorm(latent_dim)
-        self.apply(orthogonal_weight_init)
+        self.apply(initialize_weights)
 
     def forward(self, images, proprioceptions, random_rad=True, detach=False):
         if self.encoder_type == 'proprioception':
