@@ -102,6 +102,9 @@ def make_model(floor_size=None, terrain=False, rangefinders=False,
     # Remove target.
     target_site = xml_tools.find_element(mjcf, 'site', 'target')
     target_site.getparent().remove(target_site)
+  else:
+    target_site = mjcf.find('.//site[@name=\'target\']')
+    target_site.attrib['size'] = f'.4 .6'
 
   # Remove terrain.
   if not terrain:
@@ -120,7 +123,7 @@ def make_model(floor_size=None, terrain=False, rangefinders=False,
 @SUITE.add()
 def reach_target(time_limit=_DEFAULT_TIME_LIMIT, random=None, environment_kwargs=None):
   """Returns the reach task."""
-  xml_string = make_model(walls=True, floor_size=8, ball=False, target=True)
+  xml_string = make_model(walls=True, floor_size=5, ball=False, target=True)
   physics = Physics.from_xml_string(xml_string, common.ASSETS)
   task = Reach(random=random)
   environment_kwargs = environment_kwargs or {}
@@ -366,6 +369,7 @@ class VisualAntReacher(Env):
     self._action_dim = self.env.action_spec().shape[0]
     self._use_image = True
     self._image_history_len = 3
+    self.camera_ids = [3]  # 0: overhead camera, 3: ego-centric camera
     self.stacked_frames = deque(maxlen=self._image_history_len)
 
   def get_observation(self, time_step):
@@ -383,23 +387,45 @@ class VisualAntReacher(Env):
     proprioception = np.concatenate(proprioception)
 
     # Render the environment from multiple camera views
-    camera_ids = [0, 3] # Get overhead camera and ego-centric camera
-    # camera_ids = [0]      # Get overhead camera only
     frames = []
-    for camera_id in camera_ids:
+    for camera_id in self.camera_ids:
         pixels = self.env.physics.render(camera_id=camera_id, width=84, height=84)
         # Convert RGB to BGR for OpenCV
         pixels = cv2.cvtColor(pixels, cv2.COLOR_RGB2BGR)
         frames.append(pixels)
 
     image = np.concatenate(frames, axis=-1)
+
+    # Convert to HSV color space
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    
+    # Define red color range (red appears in two ranges in HSV)
+    lower_red1 = np.array([0, 120, 70])
+    upper_red1 = np.array([10, 255, 255])
+    lower_red2 = np.array([170, 120, 70])
+    upper_red2 = np.array([180, 255, 255])
+    
+    # Create masks for red color
+    mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
+    mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
+    
+    # Combine both masks
+    mask = cv2.bitwise_or(mask1, mask2)
+    
+    # Count the number of white pixels
+    white_pixel_count = np.sum(mask > 0)
+    
+    # Normalize by total number of pixels
+    total_pixels = 84 * 84
+    white_pixel_ratio = white_pixel_count / total_pixels
+
     image = np.transpose(image, (2, 0, 1))
-    return image, proprioception
+    return image, proprioception, white_pixel_ratio
   
   def reset(self, *, seed = None, options = None):
     time_step = self.env.reset()
     info = {}
-    image, proprioception = self.get_observation(time_step)
+    image, proprioception, info["white_pixel_ratio"] = self.get_observation(time_step)
     for _ in range(self._image_history_len):
       self.stacked_frames.append(image)
     obs = Observation(np.concatenate(self.stacked_frames), proprioception)
@@ -411,7 +437,9 @@ class VisualAntReacher(Env):
     terminated = time_step.last()
     truncated = False
     info = {}
-    image, proprioception = self.get_observation(time_step)
+    image, proprioception, white_pixel_ratio = self.get_observation(time_step)
+    reward = white_pixel_ratio
+
     self.stacked_frames.append(image)
     obs = Observation(np.concatenate(self.stacked_frames), proprioception)
     return obs, reward, terminated, truncated, info
@@ -422,7 +450,7 @@ class VisualAntReacher(Env):
 
   @property
   def image_space(self):
-      image_shape = (6 * self.stacked_frames.maxlen, 84, 84)
+      image_shape = (len(self.camera_ids) * 3 * self.stacked_frames.maxlen, 84, 84)
       return Box(low=0, high=255, shape=image_shape)
 
   @property
@@ -454,8 +482,7 @@ def simple_env():
                                    env.action_spec().maximum,
                                    size=env.action_spec().shape)
         time_step = env.step(action)
-        print(time_step.observation.keys())
-        # print(f"Reward: {time_step.reward}, Observation: {time_step.observation['egocentric_state']}")
+        print(f"Reward: {time_step.reward}, Observation: {time_step.observation['torso_upright']}")
 
         # Render the environment from multiple camera views
         camera_ids = [0, 1, 2, 3]
@@ -468,25 +495,24 @@ def simple_env():
         
         # Concatenate frames horizontally
         combined_frame = cv2.hconcat(frames)
-        cv2.imshow('Environment', combined_frame)
-        time.sleep(1)
+        cv2.imshow('Environment', combined_frame) 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
 
-if __name__ == "__main__":
-  # simple_env()
+def random_policy():
   env = VisualAntReacher()
-
-  for EP in range(10):
+  returns = []  # List to store returns
+  for EP in range(30):
     obs, _ = env.reset()
     terminated, truncated = False, False
     ret, steps = 0, 0
     while not (terminated or truncated):
-      # Concatenate frames horizontally
-      cv2.imshow('Environment', np.transpose(obs.image, (1, 2, 0))[:, :, -3:])
-      if cv2.waitKey(1) & 0xFF == ord('q'):
-          break
+      # # Concatenate frames horizontally
+      # x = np.transpose(obs.image, (1, 2, 0))[:, :, -3:]
+      # cv2.imshow('Environment', x)
+      # if cv2.waitKey(1) & 0xFF == ord('q'):
+      #     break
         
       action = env.action_space.sample()
       obs, reward, terminated, truncated, info = env.step(action)
@@ -494,4 +520,16 @@ if __name__ == "__main__":
       ret += reward
       steps += 1
 
+    returns.append(ret)
     print(f"Episode {EP} ended with return {ret:.2f} in {steps} timesteps.")
+
+  # Calculate and print mean and standard deviation
+  mean_return = np.mean(returns)
+  std_return = np.std(returns)
+  print(f"Mean return over episodes: {mean_return:.2f}")
+  print(f"Standard deviation of return over episodes: {std_return:.2f}")
+
+
+if __name__ == "__main__":
+  simple_env()
+  # random_policy()
