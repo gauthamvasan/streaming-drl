@@ -50,8 +50,9 @@ def main(data_dir, int_space, total_steps):
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_dir', type=str, default='data_stream_ac_Ant-v4_lr1.0_gamma0.99_lamda0.8_entropy_coeff0.01')
-    parser.add_argument('--int_space', type=int, default=50_000)
-    parser.add_argument('--total_steps', type=int, default=2_000_000)
+    parser.add_argument('--data_dir', type=str, default='./results/data_stream_ac_VisualAntReacher_lr1.0_gamma0.99_lamda0.8_entropy_coeff0.01')
+    parser.add_argument('--int_space', type=int, default=25000)
+    parser.add_argument('--total_steps', type=int, default=1_000_000)
     args = parser.parse_args()
+    print(args.total_steps)
     main(args.data_dir, args.int_space, args.total_steps)
