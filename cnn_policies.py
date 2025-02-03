@@ -135,7 +135,7 @@ class SSEncoderModel(nn.Module):
             return proprioceptions
 
         if self.encoder_type == 'pixel' or self.encoder_type == 'multi':
-            images = images / 255.
+            # images = images / 255.
             n, c, h, w = images.shape
             if random_rad:
                 images = random_augment(images, self.rad_h, self.rad_w)

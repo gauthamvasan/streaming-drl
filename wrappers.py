@@ -26,21 +26,29 @@ class NormalizeObservation(gym.Wrapper, gym.utils.RecordConstructorArgs):
         gym.utils.RecordConstructorArgs.__init__(self, epsilon=epsilon)
         gym.Wrapper.__init__(self, env)
         self.obs_stats = SampleMeanStd(shape=self.observation_space.shape)
+        self.img_stats = SampleMeanStd(shape=self.image_space.shape)
         self.epsilon = epsilon
 
     def step(self, action):
         obs, rews, terminateds, truncateds, infos = self.env.step(action)
-        obs.proprioception = self.normalize(np.array([obs.proprioception]))[0]
+        obs.proprioception = self.normalize_obs(np.array([obs.proprioception]))[0]
+        obs.image = self.normalize_image(np.array([obs.image]))[0]
         return obs, rews, terminateds, truncateds, infos
 
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
-        obs.proprioception = self.normalize(np.array([obs.proprioception]))[0]
+        obs.proprioception = self.normalize_obs(np.array([obs.proprioception]))[0]
+        obs.image = self.normalize_image(np.array([obs.image]))[0]
         return obs, info
 
-    def normalize(self, obs):
+    def normalize_obs(self, obs):
         self.obs_stats.update(obs)
         return (obs - self.obs_stats.mean) / np.sqrt(self.obs_stats.var + self.epsilon)
+
+    def normalize_image(self, img):
+        self.img_stats.update(img)
+        return (img - self.img_stats.mean) / np.sqrt(self.img_stats.var + self.epsilon)
+
 
 class ScaleReward(gym.core.Wrapper, gym.utils.RecordConstructorArgs):
     def __init__(self, env: gym.Env, gamma: float = 0.99, epsilon: float = 1e-8):
