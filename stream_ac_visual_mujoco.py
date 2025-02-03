@@ -1,5 +1,5 @@
 import os, pickle, argparse
-import torch
+import torch, time
 import numpy as np
 import torch.nn as nn
 import gymnasium as gym
@@ -58,7 +58,7 @@ class Actor(nn.Module):
         self.apply(initialize_weights)
 
     def forward(self, img, prop):
-        x = self.encoder(img, prop, random_rad=True, detach=True)
+        x = self.encoder(img, prop, random_rad=True, detach=False)
         x = self.fc_layer(x)
         x = F.layer_norm(x, x.size())
         x = F.leaky_relu(x)
@@ -91,12 +91,13 @@ class Critic(nn.Module):
         return self.linear_layer(x)
 
 class StreamAC(nn.Module):
-    def __init__(self, encoder, n_actions=3, hidden_size=128, lr=1.0, gamma=0.99, lamda=0.8, kappa_policy=3.0, kappa_value=2.0):
+    def __init__(self, actor_encoder, critic_encoder, n_actions=3, hidden_size=128, lr=1.0, gamma=0.99, lamda=0.8, kappa_policy=3.0, kappa_value=2.0):
         super(StreamAC, self).__init__()
         self.gamma = gamma
-        self.encoder = encoder
-        self.policy_net = Actor(encoder=encoder, n_actions=n_actions, hidden_size=hidden_size)
-        self.value_net = Critic(encoder=encoder, hidden_size=hidden_size)
+        self.actor_encoder = actor_encoder
+        self.critic_encoder = critic_encoder
+        self.policy_net = Actor(encoder=actor_encoder, n_actions=n_actions, hidden_size=hidden_size)
+        self.value_net = Critic(encoder=critic_encoder, hidden_size=hidden_size)
         self.optimizer_policy = ObGD(self.policy_net.parameters(), lr=lr, gamma=gamma, lamda=lamda, kappa=kappa_policy)
         self.optimizer_value = ObGD(self.value_net.parameters(), lr=lr, gamma=gamma, lamda=lamda, kappa=kappa_value)
 
@@ -159,8 +160,9 @@ def main(env_name, seed, lr, gamma, lamda, total_steps, entropy_coeff, kappa_pol
     env = NormalizeObservation(env)
     env = AddTimeInfo(env)
      
-    encoder = SSEncoderModel(env.image_space.shape, [env.proprioception_space.shape[0]+1], args.net_params, args.rad_offset, spatial_softmax=args.no_spatial_softmax)
-    agent = StreamAC(encoder=encoder, n_actions=env.action_space.shape[0], lr=lr, gamma=gamma, lamda=lamda, kappa_policy=kappa_policy, kappa_value=kappa_value)
+    actor_encoder = SSEncoderModel(env.image_space.shape, [env.proprioception_space.shape[0]+1], args.net_params, args.rad_offset, spatial_softmax=args.no_spatial_softmax)
+    critic_encoder = SSEncoderModel(env.image_space.shape, [env.proprioception_space.shape[0]+1], args.net_params, args.rad_offset, spatial_softmax=args.no_spatial_softmax)
+    agent = StreamAC(actor_encoder=actor_encoder, critic_encoder=critic_encoder, n_actions=env.action_space.shape[0], lr=lr, gamma=gamma, lamda=lamda, kappa_policy=kappa_policy, kappa_value=kappa_value)
     if debug:
         print("seed: {}".format(seed), "env: {}".format(env_name))
 
@@ -169,6 +171,7 @@ def main(env_name, seed, lr, gamma, lamda, total_steps, entropy_coeff, kappa_pol
         os.makedirs(save_dir)
 
     returns, term_time_steps = [], []
+    tic = time.time()
     s, _ = env.reset(seed=seed)
     for t in range(1, total_steps+1):
         a = agent.sample_action(s)
@@ -177,7 +180,8 @@ def main(env_name, seed, lr, gamma, lamda, total_steps, entropy_coeff, kappa_pol
         s = s_prime
         if terminated or truncated:
             if debug:
-                print("Episodic Return: {:.3f}, Time Step {}".format(info['episode']['r'][0], t))
+                print("Episodic Return: {:.3f}, Time Step {}. Time per episode: {:.2f}".format(
+                    info['episode']['r'][0], t, time.time()-tic))
             returns.append(info['episode']['r'][0])
             term_time_steps.append(t)
 
@@ -185,11 +189,13 @@ def main(env_name, seed, lr, gamma, lamda, total_steps, entropy_coeff, kappa_pol
                 pickle.dump((returns, term_time_steps, env_name), f)
 
             terminated, truncated = False, False
+            tic = time.time()
             s, _ = env.reset()
     env.close()
     
     with open(os.path.join(save_dir, "seed_{}.pkl".format(seed)), "wb") as f:
         pickle.dump((returns, term_time_steps, env_name), f)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Stream AC(λ)')
@@ -198,12 +204,13 @@ if __name__ == '__main__':
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--lamda', type=float, default=0.8)
     parser.add_argument('--rad_offset', type=float, default=0.02)
-    parser.add_argument('--total_steps', type=int, default=2_000_000)
+    parser.add_argument('--total_steps', type=int, default=1_000_000)
     parser.add_argument('--entropy_coeff', type=float, default=0.01)
     parser.add_argument('--kappa_policy', type=float, default=3.0)
     parser.add_argument('--kappa_value', type=float, default=2.0)
     parser.add_argument('--debug', action='store_true', default=True)
     parser.add_argument('--no_spatial_softmax', action='store_false')
+    parser.add_argument('--share_encoder', action='store_true')
     parser.add_argument('--overshooting_info', action='store_true')
     parser.add_argument('--render', action='store_true')
     args = parser.parse_args()
