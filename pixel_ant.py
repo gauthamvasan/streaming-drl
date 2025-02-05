@@ -27,6 +27,7 @@ from dm_control.suite import common
 from dm_control.utils import containers
 from dm_control.utils import rewards
 from dm_control.utils import xml_tools
+from dm_control.utils import io as resources
 from lxml import etree
 from scipy import ndimage
 from gymnasium.spaces import Box
@@ -60,6 +61,7 @@ def make_model(floor_size=None, terrain=False, rangefinders=False,
                walls=True, target=False, ball=False):
   """Returns the model XML string."""
   xml_string = common.read_model('quadruped.xml')
+  # xml_string = resources.GetResource("./quadruped.xml")
   parser = etree.XMLParser(remove_blank_text=True)
   mjcf = etree.XML(xml_string, parser)
 
@@ -351,8 +353,9 @@ class Observation:
 
 
 class VisualAntReacher(Env):
-  def __init__(self, **kwargs):
+  def __init__(self, action_repeat=2, **kwargs):
     self.env = reach_target()
+    self.action_repeat = action_repeat
     self.rgb_array = kwargs.get('render_mode', '') == "rgb_array"
     self.proprioception_keys = ['egocentric_state', 'torso_velocity', 'torso_upright', 'target_position']
 
@@ -432,6 +435,11 @@ class VisualAntReacher(Env):
     return obs, info
   
   def step(self, action):
+    for _ in range(self.action_repeat):
+      self.env._task.before_step(action, self.env._physics)
+      self.env._physics.step(self.env._n_sub_steps)
+      self.env._task.after_step(self.env._physics)
+
     time_step = self.env.step(action)
     reward = time_step.reward
     terminated = time_step.last()
@@ -473,31 +481,32 @@ def simple_env():
     # Load the Reach environment
     env = reach_target()
 
-    # Run the environment loop
-    time_step = env.reset()
-    print(time_step.observation.keys())
-    while not time_step.last():
-        # Sample a random action
-        action = np.random.uniform(env.action_spec().minimum,
-                                   env.action_spec().maximum,
-                                   size=env.action_spec().shape)
-        time_step = env.step(action)
-        print(f"Reward: {time_step.reward}, Observation: {time_step.observation['torso_upright']}")
+    for EP in range(10):
+      # Run the environment loop
+      time_step = env.reset()
+      print(time_step.observation.keys())
+      while not time_step.last():
+          # Sample a random action
+          action = np.random.uniform(env.action_spec().minimum,
+                                    env.action_spec().maximum,
+                                    size=env.action_spec().shape)
+          time_step = env.step(action)
+          print(f"Reward: {time_step.reward:.3f}, Observation: {time_step.observation['torso_upright']:.3f}")
 
-        # Render the environment from multiple camera views
-        camera_ids = [0, 1, 2, 3]
-        frames = []
-        for camera_id in camera_ids:
-            pixels = env.physics.render(camera_id=camera_id, width=84, height=84)
-            # Convert RGB to BGR for OpenCV
-            pixels = cv2.cvtColor(pixels, cv2.COLOR_RGB2BGR)
-            frames.append(pixels)
-        
-        # Concatenate frames horizontally
-        combined_frame = cv2.hconcat(frames)
-        cv2.imshow('Environment', combined_frame) 
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+          # Render the environment from multiple camera views
+          camera_ids = [0, 1, 2, 3]
+          frames = []
+          for camera_id in camera_ids:
+              pixels = env.physics.render(camera_id=camera_id, width=360, height=360)
+              # Convert RGB to BGR for OpenCV
+              pixels = cv2.cvtColor(pixels, cv2.COLOR_RGB2BGR)
+              frames.append(pixels)
+          
+          # Concatenate frames horizontally
+          combined_frame = cv2.hconcat(frames)
+          cv2.imshow('Environment', combined_frame) 
+          if cv2.waitKey(1) & 0xFF == ord('q'):
+              break
 
 
 def random_policy():
@@ -508,11 +517,11 @@ def random_policy():
     terminated, truncated = False, False
     ret, steps = 0, 0
     while not (terminated or truncated):
-      # # Concatenate frames horizontally
-      # x = np.transpose(obs.image, (1, 2, 0))[:, :, -3:]
-      # cv2.imshow('Environment', x)
-      # if cv2.waitKey(1) & 0xFF == ord('q'):
-      #     break
+      # Concatenate frames horizontally
+      x = np.transpose(obs.image, (1, 2, 0))[:, :, -3:]
+      cv2.imshow('Environment', x)
+      if cv2.waitKey(1) & 0xFF == ord('q'):
+          break
         
       action = env.action_space.sample()
       obs, reward, terminated, truncated, info = env.step(action)
@@ -531,5 +540,5 @@ def random_policy():
 
 
 if __name__ == "__main__":
-  simple_env()
-  # random_policy()
+  # simple_env()
+  random_policy()
