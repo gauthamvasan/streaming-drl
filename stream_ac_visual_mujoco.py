@@ -145,7 +145,7 @@ class StreamAC(nn.Module):
         self.optimizer_value.step(delta.item(), reset=done)
 
         if overshooting_info:
-            v_s, v_prime = self.v(s), self.v(s_prime)
+            v_s, v_prime = self.v(img, prop), self.v(next_img, next_prop)
             td_target = r + self.gamma * v_prime * done_mask
             delta_bar = td_target - v_s
             if torch.sign(delta_bar * delta).item() == -1:
