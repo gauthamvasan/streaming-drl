@@ -48,9 +48,10 @@ def initialize_weights(m):
         m.bias.data.fill_(0.0)
 
 class Actor(nn.Module):
-    def __init__(self, encoder, n_actions=3, hidden_size=128):
+    def __init__(self, encoder, n_actions=3, hidden_size=128, use_rad=False):
         super(Actor, self).__init__()
         self.encoder = encoder
+        self.use_rad = use_rad
         self.fc_layer   = nn.Linear(encoder.latent_dim, hidden_size)
         self.hidden_layer = nn.Linear(hidden_size, hidden_size)
         self.linear_mu = nn.Linear(hidden_size, n_actions)
@@ -58,7 +59,7 @@ class Actor(nn.Module):
         self.apply(initialize_weights)
 
     def forward(self, img, prop):
-        x = self.encoder(img, prop, random_rad=True, detach=False)
+        x = self.encoder(img, prop, random_rad=self.use_rad, detach=False)
         x = self.fc_layer(x)
         x = F.layer_norm(x, x.size())
         x = F.leaky_relu(x)
@@ -72,16 +73,17 @@ class Actor(nn.Module):
 
 
 class Critic(nn.Module):
-    def __init__(self, encoder, hidden_size=128):
+    def __init__(self, encoder, hidden_size=128, use_rad=False):
         super(Critic, self).__init__()
         self.encoder = encoder
+        self.use_rad = use_rad
         self.fc_layer   = nn.Linear(encoder.latent_dim, hidden_size)
         self.hidden_layer  = nn.Linear(hidden_size, hidden_size)
         self.linear_layer  = nn.Linear(hidden_size, 1)
         self.apply(initialize_weights)
 
     def forward(self, img, prop):
-        x = self.encoder(img, prop, random_rad=True, detach=False)
+        x = self.encoder(img, prop, random_rad=self.use_rad, detach=False)
         x = self.fc_layer(x)
         x = F.layer_norm(x, x.size())
         x = F.leaky_relu(x)
@@ -91,13 +93,13 @@ class Critic(nn.Module):
         return self.linear_layer(x)
 
 class StreamAC(nn.Module):
-    def __init__(self, actor_encoder, critic_encoder, n_actions=3, hidden_size=128, lr=1.0, gamma=0.99, lamda=0.8, kappa_policy=3.0, kappa_value=2.0):
+    def __init__(self, actor_encoder, critic_encoder, n_actions=3, hidden_size=128, lr=1.0, gamma=0.99, lamda=0.8, kappa_policy=3.0, kappa_value=2.0, use_rad=False):
         super(StreamAC, self).__init__()
         self.gamma = gamma
         self.actor_encoder = actor_encoder
         self.critic_encoder = critic_encoder
-        self.policy_net = Actor(encoder=actor_encoder, n_actions=n_actions, hidden_size=hidden_size)
-        self.value_net = Critic(encoder=critic_encoder, hidden_size=hidden_size)
+        self.policy_net = Actor(encoder=actor_encoder, n_actions=n_actions, hidden_size=hidden_size, use_rad=use_rad)
+        self.value_net = Critic(encoder=critic_encoder, hidden_size=hidden_size, use_rad=use_rad)
         self.optimizer_policy = ObGD(self.policy_net.parameters(), lr=lr, gamma=gamma, lamda=lamda, kappa=kappa_policy)
         self.optimizer_value = ObGD(self.value_net.parameters(), lr=lr, gamma=gamma, lamda=lamda, kappa=kappa_value)
 
@@ -160,13 +162,16 @@ def main(env_name, seed, lr, gamma, lamda, total_steps, entropy_coeff, kappa_pol
     env = NormalizeObservation(env)
     env = AddTimeInfo(env)
      
-    actor_encoder = SSEncoderModel(env.image_space.shape, [env.proprioception_space.shape[0]+1], args.net_params, args.rad_offset, spatial_softmax=args.no_spatial_softmax)
-    critic_encoder = SSEncoderModel(env.image_space.shape, [env.proprioception_space.shape[0]+1], args.net_params, args.rad_offset, spatial_softmax=args.no_spatial_softmax)
-    agent = StreamAC(actor_encoder=actor_encoder, critic_encoder=critic_encoder, n_actions=env.action_space.shape[0], lr=lr, gamma=gamma, lamda=lamda, kappa_policy=kappa_policy, kappa_value=kappa_value)
+    actor_encoder = SSEncoderModel(env.image_space.shape, [env.proprioception_space.shape[0]+1], args.net_params, args.rad_offset, spatial_softmax=args.use_spatial_softmax)
+    if args.share_encoder:
+        critic_encoder = actor_encoder
+    else:
+        critic_encoder = SSEncoderModel(env.image_space.shape, [env.proprioception_space.shape[0]+1], args.net_params, args.rad_offset, spatial_softmax=args.use_spatial_softmax)
+    agent = StreamAC(actor_encoder=actor_encoder, critic_encoder=critic_encoder, n_actions=env.action_space.shape[0], lr=lr, gamma=gamma, lamda=lamda, kappa_policy=kappa_policy, kappa_value=kappa_value, use_rad=args.use_rad)
     if debug:
         print("seed: {}".format(seed), "env: {}".format(env_name))
 
-    save_dir = "./results/data_stream_ac_{}_lr{}_gamma{}_lamda{}_entropy_coeff{}".format(env_name, lr, gamma, lamda, entropy_coeff)
+    save_dir = "./results/data_stream_ac_{}_lr{}_gamma{}_lamda{}_entropy_coeff{}_spatial_softmax{}_share_encoder{}_use_rad{}".format(env_name, lr, gamma, lamda, entropy_coeff, args.use_spatial_softmax, args.share_encoder, args.use_rad)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
@@ -203,13 +208,14 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=1.0)
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--lamda', type=float, default=0.8)
+    parser.add_argument('--use_rad', action='store_true')
     parser.add_argument('--rad_offset', type=float, default=0.02)
     parser.add_argument('--total_steps', type=int, default=1_000_000)
     parser.add_argument('--entropy_coeff', type=float, default=0.01)
     parser.add_argument('--kappa_policy', type=float, default=3.0)
     parser.add_argument('--kappa_value', type=float, default=2.0)
     parser.add_argument('--debug', action='store_true', default=True)
-    parser.add_argument('--no_spatial_softmax', action='store_false')
+    parser.add_argument('--use_spatial_softmax', action='store_true')
     parser.add_argument('--share_encoder', action='store_true')
     parser.add_argument('--overshooting_info', action='store_true')
     parser.add_argument('--render', action='store_true')
