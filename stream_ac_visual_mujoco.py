@@ -155,7 +155,7 @@ class StreamAC(nn.Module):
 
 def main(env_name, seed, lr, gamma, lamda, total_steps, entropy_coeff, kappa_policy, kappa_value, debug, overshooting_info, render=False):
     torch.manual_seed(seed); np.random.seed(seed)
-    env = VisualAntReacher()
+    env = VisualAntReacher(action_repeat=args.action_repeat)
     env = gym.wrappers.RecordEpisodeStatistics(env)
     env = gym.wrappers.ClipAction(env)
     env = ScaleReward(env, gamma=gamma)
@@ -171,7 +171,7 @@ def main(env_name, seed, lr, gamma, lamda, total_steps, entropy_coeff, kappa_pol
     if debug:
         print("seed: {}".format(seed), "env: {}".format(env_name))
 
-    save_dir = "./results/data_stream_ac_{}_lr{}_gamma{}_lamda{}_entropy_coeff{}_spatial_softmax{}_share_encoder{}_use_rad{}".format(env_name, lr, gamma, lamda, entropy_coeff, args.use_spatial_softmax, args.share_encoder, args.use_rad)
+    save_dir = "./results/data_stream_ac_{}_lr{}_gamma{}_lamda{}_entropy_coeff{}_spatial_softmax{}_share_encoder{}_use_rad{}_action_repeat{}".format(env_name, lr, gamma, lamda, entropy_coeff, args.use_spatial_softmax, args.share_encoder, args.use_rad, args.action_repeat)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
@@ -208,6 +208,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=1.0)
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--lamda', type=float, default=0.8)
+    parser.add_argument('--action_repeat', type=int, default=2)
     parser.add_argument('--use_rad', action='store_true')
     parser.add_argument('--rad_offset', type=float, default=0.02)
     parser.add_argument('--total_steps', type=int, default=1_000_000)
