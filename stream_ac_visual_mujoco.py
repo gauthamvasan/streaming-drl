@@ -19,6 +19,8 @@ class ObGD(torch.optim.Optimizer):
         z_sum = 0.0
         for group in self.param_groups:
             for p in group["params"]:
+                if p.grad is None:
+                    continue
                 state = self.state[p]
                 if len(state) == 0:
                     state["eligibility_trace"] = torch.zeros_like(p.data)
@@ -35,6 +37,8 @@ class ObGD(torch.optim.Optimizer):
 
         for group in self.param_groups:
             for p in group["params"]:
+                if p.grad is None:
+                    continue
                 state = self.state[p]
                 e = state["eligibility_trace"]
                 p.data.add_(delta * e, alpha=-step_size)
@@ -59,7 +63,7 @@ class Actor(nn.Module):
         self.apply(initialize_weights)
 
     def forward(self, img, prop):
-        x = self.encoder(img, prop, random_rad=self.use_rad, detach=False)
+        x = self.encoder(img, prop, random_rad=self.use_rad, detach=True)
         x = self.fc_layer(x)
         x = F.layer_norm(x, x.size())
         x = F.leaky_relu(x)
@@ -181,6 +185,12 @@ def main(env_name, seed, lr, gamma, lamda, total_steps, entropy_coeff, kappa_pol
     for t in range(1, total_steps+1):
         a = agent.sample_action(s)
         s_prime, r, terminated, truncated, info = env.step(a)
+        if args.render:
+            import cv2
+            x = np.transpose(s_prime.image, (1, 2, 0))[:, :, -3:]
+            cv2.imshow('Environment', x)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
         agent.update_params(s, a, r, s_prime,  terminated or truncated, entropy_coeff, overshooting_info)
         s = s_prime
         if terminated or truncated:
