@@ -48,7 +48,10 @@ class ObGD(torch.optim.Optimizer):
 
 def initialize_weights(m):
     if isinstance(m, nn.Linear):
-        sparse_init(m.weight, sparsity=0.9)
+        number_of_inputs = 5
+        _, fan_in = m.weight.shape
+        sparsity_factor = number_of_inputs / fan_in
+        sparse_init(m.weight, sparsity=1-sparsity_factor)
         m.bias.data.fill_(0.0)
 
 class Actor(nn.Module):

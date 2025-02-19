@@ -11,9 +11,19 @@ from sparse_init import sparse_init
 
 def initialize_weights(m):
     if isinstance(m, nn.Linear):
-        sparse_init(m.weight, sparsity=0.9)
+        number_of_inputs = 5
+        _, fan_in = m.weight.shape
+        sparsity_factor = number_of_inputs / fan_in
+        sparse_init(m.weight, sparsity=1-sparsity_factor)
         m.bias.data.fill_(0.0)
 
+class LayerNormalization(nn.Module):
+    def __init__(self):
+        super().__init__()
+    def forward(self, input):
+        return F.layer_norm(input, input.size())
+    def extra_repr(self) -> str:
+        return "Layer Normalization"
 
 def random_augment(images, rad_height, rad_width):
     """ RAD from Laskin et al.,
@@ -113,8 +123,8 @@ class SSEncoderModel(nn.Module):
         layers = []
         for i, (in_channel, out_channel, kernel_size, stride) in enumerate(conv_params):
             layers.append(nn.Conv2d(in_channel, out_channel, kernel_size, stride))
-            if i < len(conv_params) - 1:
-                layers.append(nn.ReLU())
+            layers.append(LayerNormalization())
+            layers.append(nn.ReLU())
             width = conv_out_size(width, kernel_size, stride)
             height = conv_out_size(height, kernel_size, stride)
             # print(width, height)
@@ -127,7 +137,8 @@ class SSEncoderModel(nn.Module):
             self.ss = SpatialSoftmax(width, height, conv_params[-1][1])
         else:
             self.fc = nn.Linear(conv_params[-1][1] * width * height, latent_dim)
-        # self.ln = nn.LayerNorm(latent_dim)
+        self.ln = LayerNormalization()
+        self.act = nn.ReLU()
         self.apply(initialize_weights)
 
     def forward(self, images, proprioceptions, random_rad=True, detach=False):
@@ -156,7 +167,7 @@ class SSEncoderModel(nn.Module):
             if self.encoder_type == 'multi':
                 h = torch.cat([h, proprioceptions], dim=-1)
 
-            return h
+            return self.act(self.ln(h))
         else:
             raise NotImplementedError('Invalid encoder type')
 
