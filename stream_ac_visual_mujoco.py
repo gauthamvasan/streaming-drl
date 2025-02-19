@@ -132,7 +132,7 @@ class StreamAC(nn.Module):
         img, prop = s.image, s.proprioception
         img = torch.from_numpy(img).float().unsqueeze(0)
         prop = torch.from_numpy(prop).float().unsqueeze(0)
-        next_img, next_prop = s.image, s_prime.proprioception
+        next_img, next_prop = s_prime.image, s_prime.proprioception
         next_img = torch.from_numpy(next_img).float().unsqueeze(0)
         next_prop = torch.from_numpy(next_prop).float().unsqueeze(0)
 
