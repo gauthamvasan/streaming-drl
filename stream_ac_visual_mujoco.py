@@ -8,7 +8,7 @@ from torch.distributions import Normal
 from wrappers import NormalizeObservation, ScaleReward, AddTimeInfo
 from sparse_init import sparse_init
 from cnn_policies import SSEncoderModel
-from pixel_ant import VisualAntReacher
+from reacher_env import ReacherWrapper
 
 
 class ObGD(torch.optim.Optimizer):
@@ -162,18 +162,16 @@ class StreamAC(nn.Module):
 
 def main(env_name, seed, lr, gamma, lamda, total_steps, entropy_coeff, kappa_policy, kappa_value, debug, overshooting_info, render=False):
     torch.manual_seed(seed); np.random.seed(seed)
-    env = VisualAntReacher(action_repeat=args.action_repeat)
+    env = ReacherWrapper(timeout=1000, seed=seed, mode="hard", use_image=True, img_history=3)
     env = gym.wrappers.RecordEpisodeStatistics(env)
-    env = gym.wrappers.ClipAction(env)
     env = ScaleReward(env, gamma=gamma)
     env = NormalizeObservation(env)
     env = AddTimeInfo(env)
-     
-    actor_encoder = SSEncoderModel(env.image_space.shape, [env.proprioception_space.shape[0]+1], args.net_params, args.rad_offset, spatial_softmax=args.use_spatial_softmax)
+    actor_encoder = SSEncoderModel(env.image_space.shape, [env.proprioception_space.shape[0]], args.net_params, args.rad_offset, spatial_softmax=args.use_spatial_softmax)
     if args.share_encoder:
         critic_encoder = actor_encoder
     else:
-        critic_encoder = SSEncoderModel(env.image_space.shape, [env.proprioception_space.shape[0]+1], args.net_params, args.rad_offset, spatial_softmax=args.use_spatial_softmax)
+        critic_encoder = SSEncoderModel(env.image_space.shape, [env.proprioception_space.shape[0]], args.net_params, args.rad_offset, spatial_softmax=args.use_spatial_softmax)
     agent = StreamAC(actor_encoder=actor_encoder, critic_encoder=critic_encoder, n_actions=env.action_space.shape[0], lr=lr, gamma=gamma, lamda=lamda, kappa_policy=kappa_policy, kappa_value=kappa_value, use_rad=args.use_rad)
     if debug:
         print("seed: {}".format(seed), "env: {}".format(env_name))
@@ -184,7 +182,7 @@ def main(env_name, seed, lr, gamma, lamda, total_steps, entropy_coeff, kappa_pol
 
     returns, term_time_steps = [], []
     tic = time.time()
-    s, _ = env.reset(seed=seed)
+    s, _ = env.reset()
     for t in range(1, total_steps+1):
         a = agent.sample_action(s)
         s_prime, r, terminated, truncated, info = env.step(a)

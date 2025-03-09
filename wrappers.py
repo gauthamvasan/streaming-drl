@@ -89,10 +89,8 @@ class AddTimeInfo(gym.core.Wrapper):
         self.epi_time = -0.5
         self.time_limit = 1000
         
-        self.obs_space_size = self.observation_space.shape[0] + self.env.num_envs
-        self.observation_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(self.obs_space_size,), dtype=np.float32)
-        if not (isinstance(self.action_space, gym.spaces.Box) or isinstance(self.action_space, gym.spaces.Discrete)):
-            raise ValueError("Unsupported action space")
+        self.obs_space_size = self.proprioception_space.shape[0] + self.env.num_envs
+        self.proprioception_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(self.obs_space_size,), dtype=np.float32)
 
     def step(self, action):
         obs, rews, terminateds, truncateds, infos = self.env.step(action)
