@@ -162,7 +162,7 @@ class StreamAC(nn.Module):
 
 def main(env_name, seed, lr, gamma, lamda, total_steps, entropy_coeff, kappa_policy, kappa_value, debug, overshooting_info, render=False):
     torch.manual_seed(seed); np.random.seed(seed)
-    env = ReacherWrapper(timeout=1000, seed=seed, mode="hard", use_image=True, img_history=3)
+    env = ReacherWrapper(timeout=1000, seed=seed, mode="easy", use_image=True, img_history=3)
     env = gym.wrappers.RecordEpisodeStatistics(env)
     env = ScaleReward(env, gamma=gamma)
     env = NormalizeObservation(env)
@@ -219,7 +219,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=1.0)
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--lamda', type=float, default=0.8)
-    parser.add_argument('--action_repeat', type=int, default=2)
+    parser.add_argument('--action_repeat', type=int, default=1)
     parser.add_argument('--use_rad', action='store_true')
     parser.add_argument('--rad_offset', type=float, default=0.02)
     parser.add_argument('--total_steps', type=int, default=1_000_000)
